@@ -1,6 +1,6 @@
 module SourceForgeSpeedTest
 
-go 1.22.1
+go 1.22
 
 require (
 	github.com/gin-contrib/zap v1.1.3
