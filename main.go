@@ -19,13 +19,16 @@ import (
 )
 
 var (
-	logger      *zap.Logger
-	version     bool
-	threads     int
-	file        string
-	pingcount   int
-	pingtimeout int
-	port        string
+	logger              *zap.Logger
+	version             bool
+	threads             int
+	file                string
+	pingcount           int
+	pingtimeout         int
+	port                string
+	multifastestdomain  string
+	singlefastestdomain string
+	allfastestdomain    string
 )
 
 func initLogger() {
@@ -64,19 +67,42 @@ func main() {
 	}
 
 	domains := readDomainsFromFile(file)
-	measureLatencyAndDownload(&domains)
-	sort.Sort(ByLatency(domains))
-	go startGinServer(domains[0].Name)
+	updateAndStoreFastestDomains(&domains)
 
-	// 创建计时器，每隔 10 分钟执行一次测速并更新 domain
+	// 启动 Gin 服务器时直接使用当前最低延迟的域名
+	startGinServer()
+
+	// 创建定时器，每隔 10 分钟执行一次测速并更新 domain
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		measureLatencyAndDownload(&domains)
-		sort.Sort(ByLatency(domains))
-		startGinServer(domains[0].Name)
+		updateAndStoreFastestDomains(&domains)
+		startGinServer()
 	}
+}
+
+func updateAndStoreFastestDomains(domains *[]Domain) {
+	updateDomainsLatency(domains)
+	sort.Sort(ByLatency(*domains))
+
+	// 更新当前最低延迟的域名并存储
+	allfastestdomain = (*domains)[0].Name
+	multifastestdomain = findFastestDomain("multi.txt")
+	singlefastestdomain = findFastestDomain("single.txt")
+}
+
+func updateDomainsLatency(domains *[]Domain) {
+	wg := sync.WaitGroup{}
+	for i := range *domains {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			latency, _ := tping((*domains)[i].Name)
+			(*domains)[i].Latency = latency
+		}(i)
+	}
+	wg.Wait()
 }
 
 func measureLatencyAndDownload(domains *[]Domain) {
@@ -200,21 +226,28 @@ func readDomainsFromFile(filename string) []Domain {
 	return domains
 }
 
-func startGinServer(domain string) {
+func startGinServer() {
 	r := gin.Default()
 	r.Use(ginzap.Ginzap(logger, time.RFC3339, true))
 
-	r.GET("/*path", func(c *gin.Context) {
-		// 获取用户输入的路径
-		originalURI := c.Param("path")
+	// /all/*path 路由
+	r.GET("/all/*path", func(c *gin.Context) {
+		_, originalPath := extractDomainAndPath(c.Param("path"))
+		redirectURI := buildRedirectURI(originalPath, allfastestdomain)
+		c.Redirect(http.StatusMovedPermanently, redirectURI)
+	})
 
-		// 提取原始域名
-		originalURI, originalPath := extractDomainAndPath(originalURI)
-		fmt.Print(originalURI)
-		// 构建替换后的 URI
-		redirectURI := buildRedirectURI(originalPath, domain)
+	// /single/*path 路由
+	r.GET("/single/*path", func(c *gin.Context) {
+		_, originalPath := extractDomainAndPath(c.Param("path"))
+		redirectURI := buildRedirectURI(originalPath, singlefastestdomain)
+		c.Redirect(http.StatusMovedPermanently, redirectURI)
+	})
 
-		// 执行重定向
+	// /multi/*path 路由
+	r.GET("/multi/*path", func(c *gin.Context) {
+		_, originalPath := extractDomainAndPath(c.Param("path"))
+		redirectURI := buildRedirectURI(originalPath, multifastestdomain)
 		c.Redirect(http.StatusMovedPermanently, redirectURI)
 	})
 
@@ -222,6 +255,14 @@ func startGinServer(domain string) {
 	if err != nil {
 		logger.Error("Web服务启动失败：", zap.Error(err))
 	}
+}
+
+// 从文件中读取域名列表并进行测速，返回延迟最短的域名
+func findFastestDomain(filename string) string {
+	domains := readDomainsFromFile(filename)
+	measureLatencyAndDownload(&domains)
+	sort.Sort(ByLatency(domains))
+	return domains[0].Name
 }
 
 // 提取原始域名和路径
