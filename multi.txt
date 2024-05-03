@@ -1,0 +1,7 @@
+nchc.dl.sourceforge.net
+icolo.dl.sourceforge.net
+liquidtelecom.dl.sourceforge.net
+ixpeering.dl.sourceforge.net
+netcologne.dl.sourceforge.net
+netix.dl.sourceforge.net
+freefr.dl.sourceforge.net
