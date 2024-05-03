@@ -25,6 +25,7 @@ var (
 	file        string
 	pingcount   int
 	pingtimeout int
+	port        string
 )
 
 func initLogger() {
@@ -54,6 +55,7 @@ func main() {
 	flag.IntVar(&threads, "threads", 32, "指定下载测速的线程数量")
 	flag.IntVar(&pingcount, "c", 1, "每次 ping 的包次数")
 	flag.IntVar(&pingtimeout, "timeout", 1, "ping 的超时时间")
+	flag.StringVar(&port, "port", "1340", "端口")
 	flag.Parse()
 
 	if version {
@@ -216,7 +218,7 @@ func startGinServer(domain string) {
 		c.Redirect(http.StatusMovedPermanently, redirectURI)
 	})
 
-	err := r.Run(":8080")
+	err := r.Run(":" + port)
 	if err != nil {
 		logger.Error("Web服务启动失败：", zap.Error(err))
 	}
